@@ -71,18 +71,12 @@ function formatDateShort(dateStr: string | null | undefined, locale: string = 'e
 }
 
 function sortTrips(trips: DashboardTrip[]): DashboardTrip[] {
-  const today = new Date().toISOString().split('T')[0]
-  function rank(t) {
-    if (t.start_date && t.end_date && t.start_date <= today && t.end_date >= today) return 0 // ongoing
-    if (t.start_date && t.start_date >= today) return 1 // upcoming
-    return 2 // past
-  }
   return [...trips].sort((a, b) => {
-    const ra = rank(a), rb = rank(b)
-    if (ra !== rb) return ra - rb
     const ad = a.start_date || '', bd = b.start_date || ''
-    if (ra <= 1) return ad.localeCompare(bd)
-    return bd.localeCompare(ad)
+    if (!ad && !bd) return 0
+    if (!ad) return 1   // sans date à la fin
+    if (!bd) return -1
+    return ad.localeCompare(bd)
   })
 }
 

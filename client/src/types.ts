@@ -127,7 +127,7 @@ export interface BudgetItem {
   amount: number
   currency: string
   category: string | null
-  paid_by: number | null
+  paid_by_user_id: number | null
   persons: number
   members: BudgetMember[]
   expense_date: string | null

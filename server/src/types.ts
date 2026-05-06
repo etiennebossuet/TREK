@@ -126,6 +126,8 @@ export interface BudgetItem {
   days?: number | null;
   note?: string | null;
   sort_order: number;
+  paid_by_user_id?: number | null;
+  reservation_id?: number | null;
   created_at?: string;
   members?: BudgetItemMember[];
 }

@@ -60,7 +60,7 @@ export function listBudgetItems(tripId: string | number) {
 
 export function createBudgetItem(
   tripId: string | number,
-  data: { category?: string; name: string; total_price?: number; persons?: number | null; days?: number | null; note?: string | null; expense_date?: string | null },
+  data: { category?: string; name: string; total_price?: number; persons?: number | null; days?: number | null; note?: string | null; expense_date?: string | null; paid_by_user_id?: number | null },
 ) {
   const maxOrder = db.prepare(
     'SELECT MAX(sort_order) as max FROM budget_items WHERE trip_id = ?'
@@ -78,7 +78,7 @@ export function createBudgetItem(
   }
 
   const result = db.prepare(
-    'INSERT INTO budget_items (trip_id, category, name, total_price, persons, days, note, sort_order, expense_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO budget_items (trip_id, category, name, total_price, persons, days, note, sort_order, expense_date, paid_by_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(
     tripId,
     cat,
@@ -89,6 +89,7 @@ export function createBudgetItem(
     data.note || null,
     sortOrder,
     data.expense_date || null,
+    data.paid_by_user_id ?? null,
   );
 
   const item = db.prepare('SELECT * FROM budget_items WHERE id = ?').get(result.lastInsertRowid) as BudgetItem & { members?: BudgetItemMember[] };
@@ -99,7 +100,7 @@ export function createBudgetItem(
 export function updateBudgetItem(
   id: string | number,
   tripId: string | number,
-  data: { category?: string; name?: string; total_price?: number; persons?: number | null; days?: number | null; note?: string | null; sort_order?: number; expense_date?: string | null },
+  data: { category?: string; name?: string; total_price?: number; persons?: number | null; days?: number | null; note?: string | null; sort_order?: number; expense_date?: string | null; paid_by_user_id?: number | null },
 ) {
   const item = db.prepare('SELECT * FROM budget_items WHERE id = ? AND trip_id = ?').get(id, tripId);
   if (!item) return null;
@@ -113,7 +114,8 @@ export function updateBudgetItem(
       days = CASE WHEN ? THEN ? ELSE days END,
       note = CASE WHEN ? THEN ? ELSE note END,
       sort_order = CASE WHEN ? IS NOT NULL THEN ? ELSE sort_order END,
-      expense_date = CASE WHEN ? THEN ? ELSE expense_date END
+      expense_date = CASE WHEN ? THEN ? ELSE expense_date END,
+      paid_by_user_id = CASE WHEN ? THEN ? ELSE paid_by_user_id END
     WHERE id = ?
   `).run(
     data.category || null,
@@ -124,6 +126,7 @@ export function updateBudgetItem(
     data.note !== undefined ? 1 : 0, data.note !== undefined ? data.note : null,
     data.sort_order !== undefined ? 1 : null, data.sort_order !== undefined ? data.sort_order : 0,
     data.expense_date !== undefined ? 1 : 0, data.expense_date !== undefined ? (data.expense_date || null) : null,
+    data.paid_by_user_id !== undefined ? 1 : 0, data.paid_by_user_id !== undefined ? (data.paid_by_user_id ?? null) : null,
     id,
   );
 
@@ -214,13 +217,23 @@ export function getPerPersonSummary(tripId: string | number) {
 // ---------------------------------------------------------------------------
 
 export function calculateSettlement(tripId: string | number) {
-  const items = db.prepare('SELECT * FROM budget_items WHERE trip_id = ?').all(tripId) as BudgetItem[];
+  const items = db.prepare('SELECT * FROM budget_items WHERE trip_id = ?').all(tripId) as (BudgetItem & { paid_by_user_id?: number | null })[];
   const allMembers = db.prepare(`
     SELECT bm.budget_item_id, bm.user_id, bm.paid, u.username, u.avatar
     FROM budget_item_members bm
     JOIN users u ON bm.user_id = u.id
     WHERE bm.budget_item_id IN (SELECT id FROM budget_items WHERE trip_id = ?)
   `).all(tripId) as (BudgetItemMember & { budget_item_id: number })[];
+
+  // Preload user info for payers who may not be in the members list
+  const payerIds = [...new Set(items.map(i => i.paid_by_user_id).filter((id): id is number => !!id))];
+  const payerInfoMap: Record<number, { username: string; avatar: string | null }> = {};
+  if (payerIds.length > 0) {
+    const rows = db.prepare(
+      `SELECT id, username, avatar FROM users WHERE id IN (${payerIds.map(() => '?').join(',')})`
+    ).all(...payerIds) as { id: number; username: string; avatar: string | null }[];
+    for (const u of rows) payerInfoMap[u.id] = u;
+  }
 
   // Calculate net balance per user: positive = is owed money, negative = owes money
   const balances: Record<number, { user_id: number; username: string; avatar_url: string | null; balance: number }> = {};
@@ -229,20 +242,44 @@ export function calculateSettlement(tripId: string | number) {
     const members = allMembers.filter(m => m.budget_item_id === item.id);
     if (members.length === 0) continue;
 
-    const payers = members.filter(m => m.paid);
-    if (payers.length === 0) continue; // no one marked as paid
-
     const sharePerMember = item.total_price / members.length;
-    const paidPerPayer = item.total_price / payers.length;
 
-    for (const m of members) {
-      if (!balances[m.user_id]) {
-        balances[m.user_id] = { user_id: m.user_id, username: m.username, avatar_url: avatarUrl(m), balance: 0 };
+    if (item.paid_by_user_id) {
+      // New model: a single person paid the full amount; each member owes their share
+      for (const m of members) {
+        if (!balances[m.user_id]) {
+          balances[m.user_id] = { user_id: m.user_id, username: m.username, avatar_url: avatarUrl(m), balance: 0 };
+        }
+        balances[m.user_id].balance -= sharePerMember;
       }
-      // Everyone owes their share
-      balances[m.user_id].balance -= sharePerMember;
-      // Payers get credited what they paid
-      if (m.paid) balances[m.user_id].balance += paidPerPayer;
+      // Credit the payer the full amount (initialise if not yet in balances)
+      const payerId = item.paid_by_user_id;
+      if (!balances[payerId]) {
+        const payerMember = members.find(m => m.user_id === payerId);
+        const info = payerMember || payerInfoMap[payerId];
+        if (info) {
+          balances[payerId] = { user_id: payerId, username: info.username, avatar_url: avatarUrl(info), balance: 0 };
+        }
+      }
+      if (balances[payerId]) {
+        balances[payerId].balance += item.total_price;
+      }
+    } else {
+      // Legacy model: use members.paid flags
+      const payers = members.filter(m => m.paid);
+      if (payers.length === 0) continue; // no one marked as paid
+
+      const paidPerPayer = item.total_price / payers.length;
+
+      for (const m of members) {
+        if (!balances[m.user_id]) {
+          balances[m.user_id] = { user_id: m.user_id, username: m.username, avatar_url: avatarUrl(m), balance: 0 };
+        }
+        // Everyone owes their share
+        balances[m.user_id].balance -= sharePerMember;
+        // Payers get credited what they paid
+        if (m.paid) balances[m.user_id].balance += paidPerPayer;
+      }
     }
   }
 

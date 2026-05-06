@@ -252,10 +252,11 @@ interface ChipWithTooltipProps {
   avatarUrl: string | null
   size?: number
   paid?: boolean
+  isPayer?: boolean
   onClick?: () => void
 }
 
-function ChipWithTooltip({ label, avatarUrl, size = 20, paid, onClick }: ChipWithTooltipProps) {
+function ChipWithTooltip({ label, avatarUrl, size = 20, paid, isPayer, onClick }: ChipWithTooltipProps) {
   const [hover, setHover] = useState(false)
   const [pos, setPos] = useState({ top: 0, left: 0 })
   const ref = useRef(null)
@@ -268,8 +269,8 @@ function ChipWithTooltip({ label, avatarUrl, size = 20, paid, onClick }: ChipWit
     setHover(true)
   }
 
-  const borderColor = paid ? '#22c55e' : 'var(--border-primary)'
-  const bg = paid ? 'rgba(34,197,94,0.15)' : 'var(--bg-tertiary)'
+  const borderColor = isPayer ? '#f59e0b' : (paid ? '#22c55e' : 'var(--border-primary)')
+  const bg = isPayer ? 'rgba(245,158,11,0.15)' : (paid ? 'rgba(34,197,94,0.15)' : 'var(--bg-tertiary)')
 
   return (
     <>
@@ -278,14 +279,24 @@ function ChipWithTooltip({ label, avatarUrl, size = 20, paid, onClick }: ChipWit
         style={{
           width: size, height: size, borderRadius: '50%', border: `2px solid ${borderColor}`,
           background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: size * 0.4, fontWeight: 700, color: paid ? '#16a34a' : 'var(--text-muted)',
+          fontSize: size * 0.4, fontWeight: 700, color: isPayer ? '#b45309' : (paid ? '#16a34a' : 'var(--text-muted)'),
           overflow: 'hidden', flexShrink: 0, cursor: onClick ? 'pointer' : 'default',
-          transition: 'border-color 0.15s, background 0.15s',
+          transition: 'border-color 0.15s, background 0.15s', position: 'relative',
         }}>
         {avatarUrl
           ? <img src={avatarUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           : label?.[0]?.toUpperCase()
         }
+        {isPayer && (
+          <div style={{
+            position: 'absolute', bottom: -2, right: -2,
+            width: Math.max(8, size * 0.38), height: Math.max(8, size * 0.38), borderRadius: '50%',
+            background: '#f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: '0 0 0 1.5px var(--bg-card)',
+          }}>
+            <Wallet size={Math.max(4, size * 0.22)} color="white" strokeWidth={2.5} />
+          </div>
+        )}
       </div>
       {hover && ReactDOM.createPortal(
         <div style={{
@@ -297,7 +308,14 @@ function ChipWithTooltip({ label, avatarUrl, size = 20, paid, onClick }: ChipWit
           boxShadow: '0 4px 12px rgba(0,0,0,0.15)', border: '1px solid var(--border-faint, #e5e7eb)',
         }}>
           {label}
-          {paid && (
+          {isPayer && (
+            <span style={{
+              fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 4,
+              background: 'rgba(245,158,11,0.15)', color: '#b45309',
+              textTransform: 'uppercase', letterSpacing: '0.03em',
+            }}>Payer</span>
+          )}
+          {!isPayer && paid && (
             <span style={{
               fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 4,
               background: 'rgba(34,197,94,0.15)', color: '#16a34a',
@@ -317,11 +335,13 @@ interface BudgetMemberChipsProps {
   tripMembers?: TripMember[]
   onSetMembers: (memberIds: number[]) => void
   onTogglePaid?: (userId: number, paid: boolean) => void
+  paidByUserId?: number | null
+  onSetPaidBy?: (userId: number | null) => void
   compact?: boolean
   readOnly?: boolean
 }
 
-function BudgetMemberChips({ members = [], tripMembers = [], onSetMembers, onTogglePaid, compact = true, readOnly = false }: BudgetMemberChipsProps) {
+function BudgetMemberChips({ members = [], tripMembers = [], onSetMembers, onTogglePaid, paidByUserId, onSetPaidBy, compact = true, readOnly = false }: BudgetMemberChipsProps) {
   const chipSize = compact ? 20 : 30
   const btnSize = compact ? 18 : 28
   const iconSize = compact ? (members.length > 0 ? 8 : 9) : (members.length > 0 ? 12 : 14)
@@ -362,6 +382,7 @@ function BudgetMemberChips({ members = [], tripMembers = [], onSetMembers, onTog
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2, flexWrap: 'wrap' }}>
       {members.map(m => (
         <ChipWithTooltip key={m.user_id} label={m.username} avatarUrl={m.avatar_url} size={chipSize}
+          isPayer={paidByUserId === m.user_id}
           paid={!!m.paid}
           onClick={!readOnly && onTogglePaid ? () => onTogglePaid(m.user_id, !m.paid) : undefined}
         />
@@ -408,6 +429,43 @@ function BudgetMemberChips({ members = [], tripMembers = [], onSetMembers, onTog
               </button>
             )
           })}
+          {members.length > 0 && onSetPaidBy && (
+            <>
+              <div style={{ borderTop: '1px solid var(--border-faint)', margin: '4px 0' }} />
+              <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', padding: '2px 8px 4px' }}>
+                Paid by
+              </div>
+              {tripMembers.filter(tm => memberIds.includes(tm.id)).map(tm => {
+                const isPayer = paidByUserId === tm.id
+                return (
+                  <button key={`payer-${tm.id}`} onClick={() => onSetPaidBy(isPayer ? null : tm.id)} style={{
+                    display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '5px 8px',
+                    borderRadius: 6, border: 'none',
+                    background: isPayer ? 'rgba(245,158,11,0.1)' : 'none',
+                    cursor: 'pointer', fontFamily: 'inherit', fontSize: 11,
+                    color: isPayer ? '#b45309' : 'var(--text-primary)', textAlign: 'left',
+                  }}
+                    onMouseEnter={e => { if (!isPayer) e.currentTarget.style.background = 'var(--bg-hover)' }}
+                    onMouseLeave={e => { if (!isPayer) e.currentTarget.style.background = 'none' }}
+                  >
+                    <div style={{
+                      width: 18, height: 18, borderRadius: '50%',
+                      background: isPayer ? 'rgba(245,158,11,0.2)' : 'var(--bg-tertiary)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 700,
+                      color: isPayer ? '#b45309' : 'var(--text-muted)', overflow: 'hidden', flexShrink: 0,
+                    }}>
+                      {tm.avatar_url
+                        ? <img src={tm.avatar_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        : tm.username?.[0]?.toUpperCase()
+                      }
+                    </div>
+                    <span style={{ flex: 1 }}>{tm.username}</span>
+                    {isPayer && <Wallet size={12} color="#b45309" />}
+                  </button>
+                )
+              })}
+            </>
+          )}
         </div>,
         document.body
       )}
@@ -572,7 +630,8 @@ export default function BudgetPanel({ tripId, tripMembers = [] }: BudgetPanelPro
   const canEdit = can('budget_edit', trip)
 
   const fmt = (v, cur) => fmtNum(v, locale, cur)
-  const hasMultipleMembers = tripMembers.length > 1
+  const hasMultipleMembers = tripMembers.length >= 1
+  const hasSettlement = tripMembers.length > 1
 
   // Drag state for categories
   const [dragCat, setDragCat] = useState<string | null>(null)
@@ -584,9 +643,9 @@ export default function BudgetPanel({ tripId, tripMembers = [] }: BudgetPanelPro
 
   // Load settlement data whenever budget items change
   useEffect(() => {
-    if (!hasMultipleMembers) return
+    if (!hasSettlement) return
     budgetApi.settlement(tripId).then(setSettlement).catch(() => {})
-  }, [tripId, budgetItems, hasMultipleMembers])
+  }, [tripId, budgetItems, hasSettlement])
 
   const setCurrency = (cur) => {
     if (tripId) updateTrip(tripId, { currency: cur })
@@ -627,6 +686,7 @@ export default function BudgetPanel({ tripId, tripMembers = [] }: BudgetPanelPro
 
   const handleAddItem = async (category, data) => { try { await addBudgetItem(tripId, { ...data, category }) } catch {} }
   const handleUpdateField = async (id, field, value) => { try { await updateBudgetItem(tripId, id, { [field]: value }) } catch {} }
+  const handleSetPaidBy = async (itemId: number, userId: number | null) => { try { await updateBudgetItem(tripId, itemId, { paid_by_user_id: userId }) } catch {} }
   const handleDeleteItem = async (id) => { try { await deleteBudgetItem(tripId, id) } catch {} }
   const handleDeleteCategory = async (cat) => {
     const items = grouped.get(cat) || []
@@ -918,6 +978,8 @@ export default function BudgetPanel({ tripId, tripMembers = [] }: BudgetPanelPro
                                         tripMembers={tripMembers}
                                         onSetMembers={(userIds) => setBudgetItemMembers(tripId, item.id, userIds)}
                                         onTogglePaid={(userId, paid) => toggleBudgetMemberPaid(tripId, item.id, userId, paid)}
+                                        paidByUserId={item.paid_by_user_id}
+                                        onSetPaidBy={canEdit ? (userId) => handleSetPaidBy(item.id, userId) : undefined}
                                         compact={false}
                                         readOnly={!canEdit}
                                       />
@@ -936,6 +998,8 @@ export default function BudgetPanel({ tripId, tripMembers = [] }: BudgetPanelPro
                                   tripMembers={tripMembers}
                                   onSetMembers={(userIds) => setBudgetItemMembers(tripId, item.id, userIds)}
                                   onTogglePaid={(userId, paid) => toggleBudgetMemberPaid(tripId, item.id, userId, paid)}
+                                  paidByUserId={item.paid_by_user_id}
+                                  onSetPaidBy={canEdit ? (userId) => handleSetPaidBy(item.id, userId) : undefined}
                                   readOnly={!canEdit}
                                 />
                               ) : (
@@ -1019,12 +1083,12 @@ export default function BudgetPanel({ tripId, tripMembers = [] }: BudgetPanelPro
               <span>{currency}</span>
             </div>
 
-            {hasMultipleMembers && (budgetItems || []).some(i => i.members?.length > 0) && (
+            {hasSettlement && (budgetItems || []).some(i => i.members?.length > 0) && (
               <PerPersonInline tripId={tripId} budgetItems={budgetItems} currency={currency} locale={locale} grandTotal={grandTotal} theme={theme} />
             )}
 
             {/* Settlement dropdown inside the total card */}
-            {hasMultipleMembers && settlement && settlement.flows.length > 0 && (
+            {hasSettlement && settlement && settlement.flows.length > 0 && (
               <div style={{ marginTop: 16, borderTop: `1px solid ${theme.divider}`, paddingTop: 12 }}>
                 <button onClick={() => setSettlementOpen(v => !v)} style={{
                   display: 'flex', alignItems: 'center', gap: 6, width: '100%',

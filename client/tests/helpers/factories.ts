@@ -185,7 +185,7 @@ export function buildBudgetItem(overrides: Partial<BudgetItem> = {}): BudgetItem
     amount: 100,
     currency: 'EUR',
     category: null,
-    paid_by: null,
+    paid_by_user_id: null,
     persons: 1,
     members: [],
     expense_date: null,
