@@ -29,18 +29,12 @@ services:
 #      - ADMIN_EMAIL=admin@example.com        # compte admin créé uniquement au 1er démarrage
 #      - ADMIN_PASSWORD=changeme
     volumes:
-      # Données persistantes — ne jamais supprimer ces répertoires
-      - trek_data:/app/data       # SQLite (travel.db), logs, backups, clés JWT/chiffrement
-      - trek_uploads:/app/uploads # Photos, avatars, fichiers uploadés
+      # Données persistantes — chemins relatifs au docker-compose.custom.yml
+      - ./server/data:/app/data       # SQLite (travel.db), logs, backups, clés JWT/chiffrement
+      - ./server/uploads:/app/uploads # Photos, avatars, fichiers uploadés
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 20s
-
-volumes:
-  trek_data:
-    driver: local
-  trek_uploads:
-    driver: local
