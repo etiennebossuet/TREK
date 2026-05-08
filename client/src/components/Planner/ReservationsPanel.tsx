@@ -8,7 +8,7 @@ import { useTranslation } from '../../i18n'
 import {
   Plane, Hotel, Utensils, Train, Car, Ship, Ticket, FileText, MapPin,
   Calendar, Hash, CheckCircle2, Circle, Pencil, Trash2, Plus, ChevronDown, ChevronRight, Users,
-  ExternalLink, BookMarked, Lightbulb, Link2, Clock, ArrowRight, AlertCircle,
+  ExternalLink, BookMarked, Lightbulb, Link2, Clock, ArrowRight, AlertCircle, LayoutGrid, List,
 } from 'lucide-react'
 import { openFile } from '../../utils/fileDownload'
 import Markdown from 'react-markdown'
@@ -61,6 +61,19 @@ const fieldLabelStyle: React.CSSProperties = {
 const fieldValueStyle: React.CSSProperties = {
   fontSize: 13, fontWeight: 500, color: 'var(--text-primary)',
   padding: '8px 10px', background: 'var(--bg-tertiary)', borderRadius: 10,
+}
+
+/* ── Datagrid style constants ── */
+const thStyle: React.CSSProperties = {
+  padding: '9px 14px', fontSize: 11, fontWeight: 600,
+  textTransform: 'uppercase', letterSpacing: '0.07em',
+  color: 'var(--text-faint)', textAlign: 'left', whiteSpace: 'nowrap', userSelect: 'none',
+}
+const tdStyle: React.CSSProperties = { padding: '10px 14px', verticalAlign: 'middle' }
+const actionBtnStyle: React.CSSProperties = {
+  appearance: 'none', border: 'none', background: 'transparent',
+  width: 26, height: 26, borderRadius: 6, display: 'grid', placeItems: 'center',
+  cursor: 'pointer', color: 'var(--text-faint)', flexShrink: 0,
 }
 
 interface ReservationCardProps {
@@ -433,6 +446,181 @@ function ReservationCard({ r, tripId, onEdit, onDelete, files = [], onNavigateTo
   )
 }
 
+function ReservationDataGrid({ reservations, onEdit, onDelete, assignmentLookup, canEdit, days }: {
+  reservations: Reservation[]
+  onEdit: (r: Reservation) => void
+  onDelete: (id: number) => void
+  assignmentLookup: Record<number, AssignmentLookupEntry>
+  canEdit: boolean
+  days: Day[]
+}) {
+  const { t, locale } = useTranslation()
+  const timeFormat = useSettingsStore(s => s.settings.time_format) || '24h'
+  const blurCodes = useSettingsStore(s => s.settings.blur_booking_codes)
+  const [revealedCodes, setRevealedCodes] = useState<Set<number>>(new Set())
+  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null)
+  const toast = useToast()
+
+  const sorted = useMemo(() =>
+    [...reservations].sort((a, b) => {
+      if (!a.reservation_time && !b.reservation_time) return 0
+      if (!a.reservation_time) return 1
+      if (!b.reservation_time) return -1
+      return a.reservation_time.localeCompare(b.reservation_time)
+    }),
+    [reservations],
+  )
+
+  const fmtDate = (str: string) => {
+    const dateOnly = str.includes('T') ? str.split('T')[0] : str
+    return new Date(dateOnly + 'T00:00:00Z').toLocaleDateString(locale, { day: 'numeric', month: 'short', timeZone: 'UTC' })
+  }
+  const fmtTime = (str: string) =>
+    new Date(str).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', hour12: timeFormat === '12h' })
+
+  const handleDelete = async (id: number) => {
+    setDeleteConfirmId(null)
+    try { await onDelete(id) } catch { toast.error(t('reservations.toast.deleteError')) }
+  }
+
+  return (
+    <div style={{ overflowX: 'auto', borderRadius: 12, border: '1px solid var(--border-faint)' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+        <thead>
+          <tr style={{ background: 'var(--bg-tertiary)', borderBottom: '2px solid var(--border-faint)' }}>
+            <th style={thStyle}>{t('reservations.status')}</th>
+            <th style={thStyle}>{t('reservations.titleLabel')}</th>
+            <th style={thStyle}>{t('reservations.datetime')}</th>
+            <th style={thStyle}>{t('reservations.meta.from')} / {t('reservations.meta.to')}</th>
+            <th style={thStyle}>{t('reservations.confirmationCode')}</th>
+            <th style={{ ...thStyle, width: 72 }}></th>
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((r, i) => {
+            const typeInfo = getType(r.type)
+            const TypeIcon = typeInfo.Icon
+            const confirmed = r.status === 'confirmed'
+            const eps = r.endpoints || []
+            const from = eps.find(e => e.role === 'from')
+            const to = eps.find(e => e.role === 'to')
+            const codeRevealed = revealedCodes.has(r.id)
+            const isLast = i === sorted.length - 1
+            return (
+              <tr
+                key={r.id}
+                style={{ borderBottom: isLast ? 'none' : '1px solid var(--border-faint)', background: 'var(--bg-card)', transition: 'background 0.1s' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-secondary)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'var(--bg-card)')}
+              >
+                {/* Status + Type */}
+                <td style={tdStyle}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: confirmed ? '#16a34a' : '#d97706' }} />
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', borderRadius: 6, background: 'var(--bg-tertiary)', fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                      <TypeIcon size={11} style={{ color: typeInfo.color }} />
+                      {t(typeInfo.labelKey)}
+                    </span>
+                  </div>
+                </td>
+                {/* Title */}
+                <td style={tdStyle}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{r.title}</span>
+                    {r.needs_review && <AlertCircle size={12} style={{ color: '#b45309', flexShrink: 0 }} title={t('reservations.needsReviewHint')} />}
+                  </div>
+                </td>
+                {/* Date + time */}
+                <td style={{ ...tdStyle, whiteSpace: 'nowrap', color: 'var(--text-secondary)' }}>
+                  {r.reservation_time
+                    ? <>
+                        {fmtDate(r.reservation_time)}
+                        {r.reservation_time.includes('T') && (
+                          <span style={{ marginLeft: 5, color: 'var(--text-faint)', fontSize: 11 }}>{fmtTime(r.reservation_time)}</span>
+                        )}
+                      </>
+                    : <span style={{ color: 'var(--text-faint)' }}>—</span>}
+                </td>
+                {/* Route / location */}
+                <td style={{ ...tdStyle, color: 'var(--text-secondary)', fontSize: 12, maxWidth: 220 }}>
+                  {from && to
+                    ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                        <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{from.name}</span>
+                        <ArrowRight size={11} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />
+                        <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{to.name}</span>
+                      </span>
+                    : r.location
+                      ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <MapPin size={11} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />
+                          {r.location}
+                        </span>
+                      : <span style={{ color: 'var(--text-faint)' }}>—</span>}
+                </td>
+                {/* Booking code */}
+                <td style={{ ...tdStyle, fontFamily: '"SF Mono", "JetBrains Mono", Menlo, monospace', fontSize: 12, color: 'var(--text-secondary)' }}>
+                  {r.confirmation_number
+                    ? <span
+                        style={{ filter: blurCodes && !codeRevealed ? 'blur(4px)' : 'none', cursor: blurCodes ? 'pointer' : 'default', transition: 'filter 0.2s', userSelect: blurCodes ? 'none' : undefined }}
+                        onMouseEnter={() => blurCodes && setRevealedCodes(s => new Set(s).add(r.id))}
+                        onMouseLeave={() => blurCodes && setRevealedCodes(s => { const n = new Set(s); n.delete(r.id); return n })}
+                      >{r.confirmation_number}</span>
+                    : <span style={{ color: 'var(--text-faint)' }}>—</span>}
+                </td>
+                {/* Actions */}
+                <td style={{ ...tdStyle, textAlign: 'right' }}>
+                  <div style={{ display: 'inline-flex', gap: 2 }}>
+                    {canEdit && (
+                      <button onClick={() => onEdit(r)} title={t('common.edit')} style={actionBtnStyle}
+                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0,0,0,0.05)'; e.currentTarget.style.color = 'var(--text-primary)' }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-faint)' }}>
+                        <Pencil size={13} />
+                      </button>
+                    )}
+                    {canEdit && (
+                      <button onClick={() => setDeleteConfirmId(r.id)} title={t('common.delete')} style={actionBtnStyle}
+                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.08)'; e.currentTarget.style.color = '#ef4444' }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-faint)' }}>
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+
+      {deleteConfirmId !== null && ReactDOM.createPortal(
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)', backdropFilter: 'blur(3px)' }}
+          onClick={() => setDeleteConfirmId(null)}
+        >
+          <div
+            style={{ width: 340, background: 'var(--bg-card)', borderRadius: 16, boxShadow: '0 16px 48px rgba(0,0,0,0.22)', padding: '22px 22px 18px', display: 'flex', flexDirection: 'column', gap: 12 }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: 36, height: 36, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', background: 'rgba(239,68,68,0.12)' }}>
+                <Trash2 size={18} strokeWidth={1.8} color="#ef4444" />
+              </div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{t('reservations.confirm.deleteTitle')}</div>
+            </div>
+            <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+              {t('reservations.confirm.deleteBody', { name: sorted.find(r => r.id === deleteConfirmId)?.title || '' })}
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
+              <button onClick={() => setDeleteConfirmId(null)} style={{ fontSize: 12, background: 'none', border: '1px solid var(--border-primary)', borderRadius: 8, padding: '6px 14px', cursor: 'pointer', color: 'var(--text-muted)', fontFamily: 'inherit' }}>{t('common.cancel')}</button>
+              <button onClick={() => handleDelete(deleteConfirmId)} style={{ fontSize: 12, background: '#ef4444', color: 'white', border: 'none', borderRadius: 8, padding: '6px 16px', cursor: 'pointer', fontWeight: 600, fontFamily: 'inherit' }}>{t('common.confirm')}</button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+    </div>
+  )
+}
+
 interface SectionProps {
   title: string
   count: number
@@ -505,6 +693,17 @@ export default function ReservationsPanel({ tripId, reservations, days, assignme
       return saved ? new Set(JSON.parse(saved)) : new Set()
     } catch { return new Set() }
   })
+
+  const viewStorageKey = `trek-reservation-view-${tripId}`
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>(() => {
+    try { return (localStorage.getItem(viewStorageKey) as 'grid' | 'table') || 'grid' }
+    catch { return 'grid' }
+  })
+  const toggleViewMode = () => {
+    const next = viewMode === 'grid' ? 'table' : 'grid'
+    setViewMode(next)
+    try { localStorage.setItem(viewStorageKey, next) } catch {}
+  }
 
   const toggleTypeFilter = (type: string) => {
     setTypeFilters(prev => {
@@ -603,6 +802,25 @@ export default function ReservationsPanel({ tripId, reservations, days, assignme
             </>
           )}
 
+          {reservations.length > 0 && (
+            <button
+              onClick={toggleViewMode}
+              title={viewMode === 'grid' ? t('common.tableView') : t('common.gridView')}
+              style={{
+                appearance: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                width: 34, height: 34, borderRadius: 8,
+                background: 'var(--bg-card)', color: 'var(--text-muted)',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.06)', flexShrink: 0, transition: 'all 0.15s',
+                marginLeft: canEdit ? 0 : 'auto',
+              }}
+              onMouseEnter={e => e.currentTarget.style.color = 'var(--text-primary)'}
+              onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
+            >
+              {viewMode === 'grid' ? <List size={15} /> : <LayoutGrid size={15} />}
+            </button>
+          )}
+
           {canEdit && (
             <button onClick={onAdd} style={{
               appearance: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
@@ -636,16 +854,21 @@ export default function ReservationsPanel({ tripId, reservations, days, assignme
           </div>
         ) : (
           <>
-            {allPending.length > 0 && (
-              <Section title={t('reservations.pending')} count={allPending.length} accent="gray" storageKey={`trek:bookings-pending-open:${tripId}`}>
-                {allPending.map(r => <ReservationCard key={r.id} r={r} tripId={tripId} onEdit={onEdit} onDelete={onDelete} files={files} onNavigateToFiles={onNavigateToFiles} assignmentLookup={assignmentLookup} canEdit={canEdit} days={days} />)}
-              </Section>
-            )}
-            {allConfirmed.length > 0 && (
-              <Section title={t('reservations.confirmed')} count={allConfirmed.length} accent="green" storageKey={`trek:bookings-confirmed-open:${tripId}`}>
-                {allConfirmed.map(r => <ReservationCard key={r.id} r={r} tripId={tripId} onEdit={onEdit} onDelete={onDelete} files={files} onNavigateToFiles={onNavigateToFiles} assignmentLookup={assignmentLookup} canEdit={canEdit} days={days} />)}
-              </Section>
-            )}
+            {viewMode === 'table'
+              ? <ReservationDataGrid reservations={filtered} onEdit={onEdit} onDelete={onDelete} assignmentLookup={assignmentLookup} canEdit={canEdit} days={days} />
+              : <>
+                  {allPending.length > 0 && (
+                    <Section title={t('reservations.pending')} count={allPending.length} accent="gray" storageKey={`trek:bookings-pending-open:${tripId}`}>
+                      {allPending.map(r => <ReservationCard key={r.id} r={r} tripId={tripId} onEdit={onEdit} onDelete={onDelete} files={files} onNavigateToFiles={onNavigateToFiles} assignmentLookup={assignmentLookup} canEdit={canEdit} days={days} />)}
+                    </Section>
+                  )}
+                  {allConfirmed.length > 0 && (
+                    <Section title={t('reservations.confirmed')} count={allConfirmed.length} accent="green" storageKey={`trek:bookings-confirmed-open:${tripId}`}>
+                      {allConfirmed.map(r => <ReservationCard key={r.id} r={r} tripId={tripId} onEdit={onEdit} onDelete={onDelete} files={files} onNavigateToFiles={onNavigateToFiles} assignmentLookup={assignmentLookup} canEdit={canEdit} days={days} />)}
+                    </Section>
+                  )}
+                </>
+            }
           </>
         )}
       </div>
