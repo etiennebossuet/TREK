@@ -292,7 +292,6 @@ export function buildEmailHtml(subject: string, body: string, lang: string, navi
   const appUrl = getAppUrl();
   const ctaHref = escapeHtml(navigateTarget ? `${appUrl}${navigateTarget}` : (appUrl || ''));
   const safeSubject = escapeHtml(subject);
-  const safeBody = escapeHtml(body);
 
   return `<!DOCTYPE html>
 <html>
@@ -311,7 +310,7 @@ export function buildEmailHtml(subject: string, body: string, lang: string, navi
         <tr><td style="padding: 32px 32px 16px;">
           <h1 style="margin: 0 0 8px; font-size: 18px; font-weight: 700; color: #111827; line-height: 1.3;">${safeSubject}</h1>
           <div style="width: 32px; height: 3px; background: #111827; border-radius: 2px; margin-bottom: 20px;"></div>
-          <p style="margin: 0; font-size: 14px; color: #4b5563; line-height: 1.7; white-space: pre-wrap;">${safeBody}</p>
+          <p style="margin: 0; font-size: 14px; color: #4b5563; line-height: 1.7; white-space: pre-wrap;">${body}</p>
         </td></tr>
         <!-- CTA -->
         ${appUrl ? `<tr><td style="padding: 8px 32px 32px; text-align: center;">
@@ -449,7 +448,7 @@ export async function sendEmail(to: string, subject: string, body: string, userI
       to,
       subject: `TREK — ${subject}`,
       text: body,
-      html: buildEmailHtml(subject, body, lang, navigateTarget),
+      html: buildEmailHtml(subject, escapeHtml(body), lang, navigateTarget),
     });
     logInfo(`Email sent to=${to} subject="${subject}"`);
     logDebug(`Email smtp=${config.host}:${config.port} from=${config.from} to=${to}`);
