@@ -24,6 +24,7 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-}   # openssl rand -hex 32
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-}
+      - APP_URL=https://trek.alterebo.fr         # URL publique — utilisée dans les liens e-mail (reset mot de passe, invitations…)
 #      - TRUST_PROXY=1                        # décommenter derrière un reverse-proxy (Nginx, Caddy…)
 #      - FORCE_HTTPS=true                     # décommenter si TLS terminé par le proxy
 #      - ADMIN_EMAIL=admin@example.com        # compte admin créé uniquement au 1er démarrage
