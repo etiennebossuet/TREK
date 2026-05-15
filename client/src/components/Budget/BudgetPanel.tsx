@@ -429,13 +429,13 @@ function BudgetMemberChips({ members = [], tripMembers = [], onSetMembers, onTog
               </button>
             )
           })}
-          {members.length > 0 && onSetPaidBy && (
+          {onSetPaidBy && (
             <>
               <div style={{ borderTop: '1px solid var(--border-faint)', margin: '4px 0' }} />
               <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', padding: '2px 8px 4px' }}>
                 Paid by
               </div>
-              {tripMembers.filter(tm => memberIds.includes(tm.id)).map(tm => {
+              {tripMembers.map(tm => {
                 const isPayer = paidByUserId === tm.id
                 return (
                   <button key={`payer-${tm.id}`} onClick={() => onSetPaidBy(isPayer ? null : tm.id)} style={{
